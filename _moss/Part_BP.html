@@ -1,0 +1,722 @@
+<html>
+
+<head>
+<title>Learning WebGL &mdash; lesson 4</title>
+<meta http-equiv="content-type" content="text/html; charset=ISO-8859-1">
+
+<script type="text/javascript" src="gl-matrix.js"></script>
+<script type="text/javascript" src="webgl-utils.js"></script>
+
+<script id="shader-fs" type="x-shader/x-fragment">
+    precision mediump float;
+
+    varying vec2 vTextureCoord;
+	uniform sampler2D uSampler;
+	vec4 flag_color = vec4(1,1,1,1);
+	varying vec3 vColor;
+
+    void main(void) {
+        // gl_FragColor = texture2D(uSampler, vec2(vTextureCoord.s, vTextureCoord.t))*vec4(vColor,1.0);
+		
+		vec4 texColor = texture2D(uSampler, vec2(vTextureCoord.s, vTextureCoord.t));
+		gl_FragColor = texColor*vec4(vColor,1.0);
+    }
+</script>
+
+<script id="shader-vs" type="x-shader/x-vertex">
+    attribute vec3 aVertexPosition;
+	attribute vec3 aVertex_NormalPosition;
+    attribute vec2 aTextureCoord;
+	attribute vec3 aVertex_KdPosition;
+
+    uniform mat4 uMVMatrix;
+    uniform mat4 uPMatrix;
+	uniform mat3 NMatrix;
+	
+
+    varying vec2 vTextureCoord;
+	vec3 Light = vec3(0.0,5.0,0.0);
+	vec3 eye = vec3(0.0,0.0,2.0);
+	vec3 Ka = vec3(1.0,1.0,1.0);
+	vec3 Ks = vec3(1.0,1.0,1.0);
+	vec3 Kd = vec3(0.5,0.5,0.5);
+	
+	vec3 La = vec3(1.0,1.0,1.0);
+	vec3 Ls = vec3(1.0,1.0,1.0);
+	vec3 Ld = vec3(1.0,1.0,1.0);
+	varying vec3 vColor;
+
+    void main(void) {
+        gl_Position = uPMatrix * uMVMatrix * vec4(aVertexPosition, 1.0);
+		vec3 eye_vector = normalize(eye - gl_Position.xyz);
+		vec3 Light_vector = normalize(Light - gl_Position.xyz);
+		vec3 N = normalize(aVertex_NormalPosition);
+		//vec3 Kd = normalize(aVertex_KdPosition);
+		float LN = dot(Light_vector,N);
+		float NH = dot(N,normalize(Light_vector+eye_vector));
+		
+		vec3 Color = (Ka*La)+(aVertex_KdPosition*Ld*LN)+(Ks*Ls*pow(NH,10.0));
+        vTextureCoord = aTextureCoord;
+		vColor = Color;
+		
+		/*if(aVertex_KdPosition[0]>0.0)
+		{
+			vColor = vec3(1.0,0.0,0.0);
+		}
+		else{
+			vColor = vec3(1.0,1.0,1.0);
+		}*/
+    }
+</script>
+
+
+<script type="text/javascript">
+
+    var gl;
+
+    function initGL(canvas) {
+        try {
+            gl = canvas.getContext("experimental-webgl");
+            gl.viewportWidth = canvas.width;
+            gl.viewportHeight = canvas.height;
+        } catch (e) {
+        }
+        if (!gl) {
+            alert("Could not initialise WebGL, sorry :-(");
+        }
+    }
+
+
+    function getShader(gl, id) {
+        var shaderScript = document.getElementById(id);
+        if (!shaderScript) {
+            return null;
+        }
+
+        var str = "";
+        var k = shaderScript.firstChild;
+        while (k) {
+            if (k.nodeType == 3) {
+                str += k.textContent;
+            }
+            k = k.nextSibling;
+        }
+
+        var shader;
+        if (shaderScript.type == "x-shader/x-fragment") {
+            shader = gl.createShader(gl.FRAGMENT_SHADER);
+        } else if (shaderScript.type == "x-shader/x-vertex") {
+            shader = gl.createShader(gl.VERTEX_SHADER);
+        } else {
+            return null;
+        }
+
+        gl.shaderSource(shader, str);
+        gl.compileShader(shader);
+
+        if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+            alert(gl.getShaderInfoLog(shader));
+            return null;
+        }
+
+        return shader;
+    }
+
+
+    var shaderProgram;
+
+    function initShaders() {
+        var fragmentShader = getShader(gl, "shader-fs");
+        var vertexShader = getShader(gl, "shader-vs");
+
+        shaderProgram = gl.createProgram();
+        gl.attachShader(shaderProgram, vertexShader);
+        gl.attachShader(shaderProgram, fragmentShader);
+        gl.linkProgram(shaderProgram);
+
+        if (!gl.getProgramParameter(shaderProgram, gl.LINK_STATUS)) {
+            alert("Could not initialise shaders");
+        }
+
+        gl.useProgram(shaderProgram);
+
+        shaderProgram.vertexPositionAttribute = gl.getAttribLocation(shaderProgram, "aVertexPosition");
+        gl.enableVertexAttribArray(shaderProgram.vertexPositionAttribute);
+		
+		shaderProgram.vertexNormalPositionAttribute = gl.getAttribLocation(shaderProgram, "aVertex_NormalPosition");
+        gl.enableVertexAttribArray(shaderProgram.vertexNormalPositionAttribute);
+		
+		shaderProgram.vertex_KdAttribute = gl.getAttribLocation(shaderProgram, "aVertex_KdPosition");
+        gl.enableVertexAttribArray(shaderProgram.vertex_KdAttribute);
+
+       /* shaderProgram.vertexColorAttribute = gl.getAttribLocation(shaderProgram, "aVertexColor");
+        gl.enableVertexAttribArray(shaderProgram.vertexColorAttribute);*/
+		
+		  shaderProgram.textureCoordAttribute = gl.getAttribLocation(shaderProgram, "aTextureCoord");
+        gl.enableVertexAttribArray(shaderProgram.textureCoordAttribute);
+		shaderProgram.samplerUniform = gl.getUniformLocation(shaderProgram, "uSampler");
+
+        shaderProgram.pMatrixUniform = gl.getUniformLocation(shaderProgram, "uPMatrix");
+        shaderProgram.mvMatrixUniform = gl.getUniformLocation(shaderProgram, "uMVMatrix");
+		
+		shaderProgram.NMatrixUniform = gl.getUniformLocation(shaderProgram, "NMatrix");
+		
+		
+    }
+
+
+    var mvMatrix = mat4.create();
+    var mvMatrixStack = [];
+    var pMatrix = mat4.create();
+	var nMatrix = mat4.create();
+
+    function mvPushMatrix() {
+        var copy = mat4.create();
+        mat4.copy(copy,mvMatrix);
+        mvMatrixStack.push(copy);
+    }
+
+    function mvPopMatrix() {
+        if (mvMatrixStack.length == 0) {
+            throw "Invalid popMatrix!";
+        }
+        mvMatrix = mvMatrixStack.pop();
+    }
+
+
+    function setMatrixUniforms() {
+        gl.uniformMatrix4fv(shaderProgram.pMatrixUniform, false, pMatrix);
+        gl.uniformMatrix4fv(shaderProgram.mvMatrixUniform, false, mvMatrix);
+		gl.uniformMatrix4fv(shaderProgram.NMatrixUniform, false, nMatrix);
+    }
+
+
+    function degToRad(degrees) {
+        return degrees * Math.PI / 180;
+    }
+
+
+    var pyramidVertexPositionBuffer;
+    var pyramidVertexColorBuffer;
+    var cubeVertexPositionBuffer;
+    var cubeVertexColorBuffer;
+    var cubeVertexIndexBuffer;
+	var cubeVertexTextureCoordBuffer;
+	function readTextFile(file)
+{
+    var rawFile = new XMLHttpRequest();
+    rawFile.open("GET", file, false);
+    rawFile.onreadystatechange = function ()
+    {
+		//alert("In function readTextFile");
+        if(rawFile.readyState === 4)
+        {
+            if(rawFile.status === 200 || rawFile.status == 0)
+            {
+                var allText = rawFile.responseText;
+               // alert(allText);
+				localStorage.setItem('alText',allText);
+			//	alert(localStorage.getItem('alText'));
+            }
+        }
+    }
+    rawFile.send(null);
+}
+ //source---http://stackoverflow.com/questions/14446447/javascript-read-local-text-file
+ 
+  var crateTextures;
+
+    function initTexture() {
+        var crateImage = new Image();
+
+    //    for (var i=0; i < 3; i++) {
+            var texture = gl.createTexture();
+            texture.image = crateImage;
+            crateTextures = texture;
+ //       }
+
+        crateImage.onload = function () {
+            handleLoadedTexture(crateTextures)
+        }
+     
+	  crateImage.src = localStorage.getItem('texture_file');
+	
+    }
+	
+	function readMTLFile(file)
+	{
+    var rawFile = new XMLHttpRequest();
+    rawFile.open("GET", file, false);
+    rawFile.onreadystatechange = function ()
+    {
+		//alert("In function readTextFile");
+        if(rawFile.readyState === 4)
+        {
+            if(rawFile.status === 200 || rawFile.status == 0)
+            {
+                var allText = rawFile.responseText;
+               // alert(allText);
+				localStorage.setItem('MTLText',allText);
+			//	alert(localStorage.getItem('alText'));
+            }
+        }
+    }
+    rawFile.send(null);
+	}
+	
+    function handleLoadedTexture(crateTextures) {
+        gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+
+        gl.bindTexture(gl.TEXTURE_2D, crateTextures);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE,crateTextures.image);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+
+        gl.bindTexture(gl.TEXTURE_2D, null);
+    }
+
+    function initBuffers() {
+        pyramidVertexPositionBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, pyramidVertexPositionBuffer);
+		
+		var splitText = localStorage.getItem('alText')
+		
+		var lineText = splitText.split('\n');
+		
+		var splitText_mtl = localStorage.getItem('MTLText')
+	
+		var lineText_mtl = splitText_mtl.split('\n');
+		
+	
+	
+		var index_v;
+		var vertices1=[];
+		var faces1=[];
+		var vertexcount = 0;
+		var facecount = 0;
+		var final_vertices = [];
+		var colors = [];
+		var vertices_texture =[];
+		var faces_texture = [];
+		var final_vertices_texture = [];
+		var vertices_normals = [];
+		var faces_normals = [];
+		var final_vertices_normals = [];
+		var kd_val = [];
+		var Kd_val_count = 0;
+		
+		
+		for(var i =0;i<lineText.length;i++)
+		{
+			if(lineText[i][0] == 'v' && lineText[i][1] == " ")
+			{
+				var parsed_vertex=lineText[i].split(" ");
+				vertices1.push(parsed_vertex[2]);
+				vertices1.push(parsed_vertex[3]);
+				vertices1.push(parsed_vertex[4]);
+				vertexcount++;
+			}
+		
+		}
+		
+		console.log(vertexcount);
+		console.log(vertices1.length);
+		console.log(vertices1);
+		
+		for(var i =0;i<lineText.length;i++)
+		{
+			if(lineText[i][0] == 'f')
+			{
+				facecount++;
+				var parsed_vertex=lineText[i].split(" ");
+				for(var count = 1; count < 4; count++)
+				{
+					var slash_split = parsed_vertex[count].split("/");
+					faces1.push(slash_split[0]-1);
+				}
+			}
+		
+		}
+		
+		console.log(faces1);
+		
+		var flag ;
+		for(var i =0;i<faces1.length;i++)
+		{
+			
+			if((faces1[i]) == 0)
+			{
+				flag =0;
+			}
+			else
+			{
+				flag = faces1[i];
+			}
+			final_vertices.push(vertices1[(flag*3)+0]);
+			final_vertices.push(vertices1[(flag*3)+1]);
+			final_vertices.push(vertices1[(flag*3)+2]);
+		}
+        
+		for(var i =0;i<lineText.length;i++)
+		{
+			if(lineText[i][0] == 'v' && lineText[i][1] == "t")
+			{
+				var parsed_vertex=lineText[i].split(" ");
+				vertices_texture.push(parsed_vertex[1]);
+				vertices_texture.push(parsed_vertex[2]);
+				vertices_texture.push(parsed_vertex[3]);
+				
+			}
+		
+		}
+		
+		
+		
+		for(var i =0;i<lineText.length;i++)
+		{
+			if(lineText[i][0] == 'f')
+			{
+				//facecount++;
+				var parsed_vertex=lineText[i].split(" ");
+				for(var count = 1; count < 4; count++)
+				{
+					var slash_split = parsed_vertex[count].split("/");
+					faces_texture.push(slash_split[1]-1);
+				}
+			}
+		
+		}
+		
+		//var flag ;
+		for(var i =0;i<faces_texture.length;i++)
+		{
+			
+			if((faces_texture[i]) == 0)
+			{
+				flag =0;
+			}
+			else
+			{
+				flag = faces_texture[i];
+			}
+			final_vertices_texture.push(vertices_texture[(flag*3)+0]);
+			final_vertices_texture.push(vertices_texture[(flag*3)+1]);
+			//final_vertices_texture.push(vertices_texture[(flag*3)+2]);
+		}
+		
+		
+		
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(final_vertices), gl.STATIC_DRAW);
+        pyramidVertexPositionBuffer.itemSize = 3;
+        pyramidVertexPositionBuffer.numItems = facecount*3;
+
+        cubeVertexTextureCoordBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, cubeVertexTextureCoordBuffer);
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(final_vertices_texture), gl.STATIC_DRAW);
+        cubeVertexTextureCoordBuffer.itemSize = 2;
+        cubeVertexTextureCoordBuffer.numItems = facecount*3;
+		
+	//-------------------------------------------------------------------------------------------
+	//-------------------------------------------------------------------------------------------
+		
+		pyramidVertexNormalPositionBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, pyramidVertexNormalPositionBuffer);
+		
+		for(var i =0;i<lineText.length;i++)
+		{
+			if(lineText[i][0] == 'v' && lineText[i][1] == "n")
+			{
+				var parsed_vertex=lineText[i].split(" ");
+				vertices_normals.push(parsed_vertex[1]);
+				vertices_normals.push(parsed_vertex[2]);
+				vertices_normals.push(parsed_vertex[3]);
+			}
+		
+		}
+		
+				
+		console.log("Vertix normals");
+		console.log(vertices_normals);
+		
+		
+		for(var i =0;i<lineText.length;i++)
+		{
+			if(lineText[i][0] == 'f')
+			{
+				//facecount++;
+				var parsed_vertex=lineText[i].split(" ");
+				for(var count = 1; count < 4; count++)
+				{
+					var slash_split = parsed_vertex[count].split("/");
+					faces_normals.push(slash_split[2]-1);
+				}
+			}
+		
+		}
+		
+		console.log("faces_normals");
+		console.log(faces_normals);
+		
+		for(var i =0;i<faces_normals.length;i++)
+		{
+			if((faces_normals[i]) == 0)
+			{
+				flag =0;
+			}
+			else
+			{
+				flag = faces_normals[i];
+			}
+			final_vertices_normals.push(vertices_normals[(flag*3)+0]);
+			final_vertices_normals.push(vertices_normals[(flag*3)+1]);
+			final_vertices_normals.push(vertices_normals[(flag*3)+2]);
+		}
+		
+		console.log("final_vertices_normals");
+		console.log(final_vertices_normals);
+		
+		gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(final_vertices_normals), gl.STATIC_DRAW);
+        pyramidVertexNormalPositionBuffer.itemSize = 3;
+        pyramidVertexNormalPositionBuffer.numItems = vertexcount;
+		
+	//-------------------------------------------------------------------------------------------
+	//-------------------------------------------------------------------------------------------
+	
+		pyramidVertex_Kd_PositionBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, pyramidVertex_Kd_PositionBuffer);
+		
+		var temp_store1;
+		var temp_store2;
+		var temp_store3;
+		
+		for(var i =0;i<lineText_mtl.length;i++)
+		{
+			var line_content = lineText_mtl[i][1];
+			if( line_content == 'K' && lineText_mtl[i][2] =='d')
+			{
+				var parsed_vertex=lineText_mtl[i].split(" ");
+				temp_store1= parsed_vertex[1];
+				temp_store2= parsed_vertex[2];
+				temp_store3= parsed_vertex[3];
+				Kd_val_count++;
+				
+			}
+		
+		}
+		
+		console.log(temp_store1);
+		console.log(temp_store2);
+		console.log(temp_store3);
+		
+		for(var i =0;i<facecount*3;i++)
+		{
+			kd_val.push(temp_store1);
+			kd_val.push(temp_store2);
+			kd_val.push(temp_store3);
+		
+		}
+		
+		console.log(kd_val);
+		console.log(Kd_val_count);
+		
+		gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(kd_val), gl.STATIC_DRAW);
+        pyramidVertex_Kd_PositionBuffer.itemSize = 3;
+        pyramidVertex_Kd_PositionBuffer.numItems = facecount*3;
+		
+	//-------------------------------------------------------------------------------------------
+	//-------------------------------------------------------------------------------------------
+	
+	     
+    }
+		
+	     
+    
+
+
+    var rPyramid = 0;
+    var rCube = 0;
+	var z = 0.25;
+	var x = 0.25;
+	var y = 0.25;
+	var bracket = -10;
+	var rotate = 0;
+    function drawScene() {
+        gl.viewport(0, 0, gl.viewportWidth, gl.viewportHeight);
+        gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+
+        mat4.perspective(pMatrix,45, gl.viewportWidth / gl.viewportHeight, 0.1, 100.0);
+
+        mat4.identity(mvMatrix);
+
+        mat4.translate(mvMatrix,mvMatrix, [x, y, bracket]);
+		mat4.scale(mvMatrix,mvMatrix,[z,z,z]);
+ //       mvPushMatrix();
+        mat4.rotate(mvMatrix,mvMatrix, degToRad(rotate), [0, 1, 0]);
+
+		mat3.normalFromMat4(nMatrix, mvMatrix);
+		
+        gl.bindBuffer(gl.ARRAY_BUFFER, pyramidVertexPositionBuffer);
+        gl.vertexAttribPointer(shaderProgram.vertexPositionAttribute, pyramidVertexPositionBuffer.itemSize, gl.FLOAT, false, 0, 0);
+
+        gl.bindBuffer(gl.ARRAY_BUFFER, cubeVertexTextureCoordBuffer);
+        gl.vertexAttribPointer(shaderProgram.textureCoordAttribute, cubeVertexTextureCoordBuffer.itemSize, gl.FLOAT, false, 0, 0);
+		
+		gl.bindBuffer(gl.ARRAY_BUFFER, pyramidVertexNormalPositionBuffer);
+        gl.vertexAttribPointer(shaderProgram.vertexNormalPositionAttribute, pyramidVertexNormalPositionBuffer.itemSize, gl.FLOAT, false, 0, 0);
+		
+		gl.bindBuffer(gl.ARRAY_BUFFER, pyramidVertex_Kd_PositionBuffer);
+        gl.vertexAttribPointer(shaderProgram.vertex_KdAttribute, pyramidVertex_Kd_PositionBuffer.itemSize, gl.FLOAT, false, 0, 0);
+
+
+        gl.activeTexture(gl.TEXTURE0);
+        gl.bindTexture(gl.TEXTURE_2D, crateTextures);
+        gl.uniform1i(shaderProgram.samplerUniform, 0);
+
+        setMatrixUniforms();
+        gl.drawArrays(gl.TRIANGLES, 0, pyramidVertexPositionBuffer.numItems);
+
+      //  mvPopMatrix();
+
+
+       // mat4.translate(mvMatrix, [0.0, 0.0, -15.0]);
+
+     /*   mvPushMatrix();
+        mat4.rotate(mvMatrix, degToRad(rCube), [1, 1, 1]);
+
+
+
+        mvPopMatrix();*/
+
+    }
+
+
+    var lastTime = 0;
+	
+
+    function animate() {
+        var timeNow = new Date().getTime();
+        if (lastTime != 0) {
+            var elapsed = timeNow - lastTime;
+
+            rPyramid += (90 * elapsed) / 1000.0;
+            rCube -= (75 * elapsed) / 1000.0;
+        }
+        lastTime = timeNow;
+	document.onkeydown = function(e) {
+    switch (e.keyCode) {
+        case 37:
+            x-=0.05;
+            break;
+        case 38:
+            y+=0.05;
+            break;
+       	case 39:
+            x+=0.05;
+            break;
+		case 40:
+            y-=0.05;
+            break;
+        case 88:
+            z-=0.05;
+            break;
+		case 90:
+            z+=0.05;
+            break;
+		case 81:
+            rotate-=0.5;
+            break;
+		case 87:
+            rotate+=0.5;
+            break;
+		case 219:
+            bracket+=1;
+            break;
+		case 221:
+            bracket-=1;
+            break;
+    }
+	};
+		
+	}
+    
+
+
+    function tick() {
+        requestAnimFrame(tick);
+
+        drawScene();
+        animate();
+    }
+
+
+    function webGLStart() {
+        var canvas = document.getElementById("lesson04-canvas");
+		//readTextFile("models/vase/vase.obj");
+		var link = window.location.href;
+		var pathfile = link.split('=')[1];
+		readTextFile(pathfile);
+		/*if(pathfile == "head.obj")
+		{
+		
+		}*/
+		var mtlfile;
+						
+		var splitText = localStorage.getItem('alText')
+		var lineText = splitText.split('\n');
+		for(var i =0;i<lineText.length;i++)
+		{
+			var filesplit = lineText[i].split(" ");
+			if(filesplit[0] == "mtllib")
+			{
+				mtlfile = filesplit[1];
+			}
+		
+		}
+		readMTLFile(mtlfile);
+		
+		var splitText_mtl = localStorage.getItem('MTLText')
+		var lineText_mtl = splitText_mtl.split('\n');
+		
+		var texture_image;
+		for(var i =0;i<lineText_mtl.length;i++)
+		{
+			var filesplit = lineText_mtl[i].split(" ");
+		//	alert(filesplit[0].length+" "+filesplit[0]);
+			if(filesplit[0] == "	map_Kd")
+			{
+				//alert("in for");
+				texture_image = filesplit[1];
+			}
+		
+		}
+		
+		localStorage.setItem('texture_file',texture_image);
+		
+		
+        initGL(canvas);
+        initShaders()
+		initTexture();		
+        initBuffers();
+
+        gl.clearColor(0.0, 0.0, 0.0, 1.0);
+        gl.enable(gl.DEPTH_TEST);
+
+        tick();
+    }
+
+</script>
+
+
+</head>
+
+
+<body onload="webGLStart();">
+    <a href="http://learningwebgl.com/blog/?p=370">&lt;&lt; Back to Lesson 4</a><br />
+
+    <canvas id="lesson04-canvas" style="border: none;" width="500" height="500"></canvas>
+
+    <br/>
+    <a href="http://learningwebgl.com/blog/?p=370">&lt;&lt; Back to Lesson 4</a><br />
+</body>
+
+</html>
